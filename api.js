@@ -68,6 +68,7 @@ app.get('/chant/:id', async (req, res) => {
     const $ = cheerio.load(response.data);
 
     const h1 = $('h1').first().text().trim();
+    const nom = h1.replace(/\s+-\s+[A-Z0-9-]+$/, '').trim();
     const auteur = $('div:contains("Auteur :")').text().replace('Auteur :', '').trim();
     const compositeur = $('div:contains("Compositeur :")').text().replace('Compositeur :', '').trim();
     const editeur = $('div:contains("Editeur :")').text().replace('Editeur :', '').trim();
@@ -86,37 +87,78 @@ app.get('/chant/:id', async (req, res) => {
       text = text.split(/©/)[0];
       text = text.replace(/\r/g, '').trim();
 
-      const stanzas = text.split(/\n\s*\n+/).map(s => s.trim().replace(/\t/g, ' ')).filter(s => s);
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
+      let refrain = '';
       const couplets = [];
-      const refrains = [];
+      let currentCouplet = [];
+      let inRefrain = false;
+      let foundCouplet = false;
 
-      for (const stanza of stanzas) {
-        if (/paroles et musique/i.test(stanza) || /no\./i.test(stanza) || /éditions de l'emmanuel/i.test(stanza)) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Ignore les métadonnées
+        if (/paroles et musique/i.test(line) || /no\./i.test(line) || /éditions de l'emmanuel/i.test(line)) {
           continue;
         }
 
-        if (/^(R\.|\bREFRAIN\b)/i.test(stanza)) {
-          refrains.push(stanza.replace(/^(R\.|\bREFRAIN\b)\s*\d*\s*[\n]*/i, '').trim());
-        } else if (/^\d+\.?/.test(stanza)) {
-          couplets.push(stanza.replace(/^\d+\.?\s*[\n]*/, '').trim());
-        } else {
-          if (stanza) {
-            refrains.push(stanza);
+        // Détection du refrain balisé
+        if (/^(R\.|Refrain)/i.test(line)) {
+          inRefrain = true;
+          continue;
+        }
+
+        // Détection d'un nouveau couplet numéroté (ligne contenant uniquement un numéro)
+        if (/^\d+$/.test(line)) {
+          if (currentCouplet.length > 0) {
+            couplets.push(currentCouplet.join('\n').trim());
+            currentCouplet = [];
           }
+          foundCouplet = true;
+          inRefrain = false;
+          continue;
+        }
+
+        // Détection d'un nouveau couplet numéroté (ligne commençant par un numéro suivi d'un point)
+        if (/^\d+\./.test(line)) {
+          if (currentCouplet.length > 0) {
+            couplets.push(currentCouplet.join('\n').trim());
+            currentCouplet = [];
+          }
+          foundCouplet = true;
+          inRefrain = false;
+          // On enlève le numéro et le point
+          currentCouplet.push(line.replace(/^\d+\.\s*/, ''));
+          continue;
+        }
+
+        // Ajout des lignes au bon endroit
+        if (inRefrain || (!foundCouplet && !inRefrain)) {
+          // On est dans le refrain (balisé ou avant le premier couplet)
+          refrain += (refrain ? '\n' : '') + line;
+        } else {
+          // On est dans un couplet
+          currentCouplet.push(line);
         }
       }
 
-      const uniqueRefrains = [...new Set(refrains.filter(r => r.length > 0))].join('\n\n').trim();
+      // Ajout du dernier couplet s'il existe
+      if (currentCouplet.length > 0) {
+        couplets.push(currentCouplet.join('\n').trim());
+      }
 
-      return { refrain: uniqueRefrains, couplet: couplets.filter(c => c.length > 0) };
+      return {
+        refrain: refrain.trim(),
+        couplet: couplets
+      };
     };
 
     const lyrics = parseLyrics(texte);
 
     res.json({
       id,
-      nom: h1,
+      nom,
       refrain: lyrics.refrain,
       couplet: lyrics.couplet,
     });
