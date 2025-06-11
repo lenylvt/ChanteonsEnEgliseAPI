@@ -123,6 +123,10 @@ app.get('/chant/:id', async (req, res) => {
   }
 });
 
+/*
 app.listen(PORT, () => {
   console.log(`API MesseSong en écoute sur http://localhost:${PORT}`);
 });
+*/
+
+module.exports = app;
