@@ -1,8 +1,8 @@
-const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { CookieJar } = require('tough-cookie');
-const { wrapper } = require('axios-cookiejar-support');
+import express from 'express';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { CookieJar } from 'tough-cookie';
+import { wrapper } from 'axios-cookiejar-support';
 
 const app = express();
 const PORT = 3000;
@@ -68,6 +68,7 @@ app.get('/chant/:id', async (req, res) => {
     const $ = cheerio.load(response.data);
 
     const h1 = $('h1').first().text().trim();
+    const nom = h1.replace(/\s+-\s+[A-Z0-9-]+$/, '').trim();
     const auteur = $('div:contains("Auteur :")').text().replace('Auteur :', '').trim();
     const compositeur = $('div:contains("Compositeur :")').text().replace('Compositeur :', '').trim();
     const editeur = $('div:contains("Editeur :")').text().replace('Editeur :', '').trim();
@@ -83,38 +84,81 @@ app.get('/chant/:id', async (req, res) => {
     const parseLyrics = (text) => {
       if (!text) return { refrain: '', couplet: [] };
 
-      text = text.replace(/\r/g, '');
+      text = text.split(/©/)[0];
+      text = text.replace(/\r/g, '').trim();
 
-      const refrainRegex = /REFRAIN\s*\d*\s*([\s\S]*?)(?=\n\n\d+\n|\n\nREFRAIN\s*\d*|$)/g;
-      const refrainMatches = [...text.matchAll(refrainRegex)];
-      const refrains = refrainMatches.map(match => match[1].trim());
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-      const coupletRegex = /(?:^|\n\n)(\d+)\n([\s\S]*?)(?=\n\n\d+\n|$)/g;
+      let refrain = '';
       const couplets = [];
-      let match;
-      while ((match = coupletRegex.exec(text)) !== null) {
-        couplets.push(match[2].trim().replace(/\n+/g, '\n'));
-      }
+      let currentCouplet = [];
+      let inRefrain = false;
+      let foundCouplet = false;
 
-      let refrainText = refrains.join('\n\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
 
-      if (refrainText === '' && couplets.length > 0) {
-        const firstCoupletMatch = text.match(coupletRegex);
-        if (firstCoupletMatch) {
-          const endOfRefrain = text.indexOf(firstCoupletMatch[0]);
-          const potentialRefrain = text.substring(0, endOfRefrain).trim();
-          if (potentialRefrain) refrainText = potentialRefrain;
+        // Ignore les métadonnées
+        if (/paroles et musique/i.test(line) || /no\./i.test(line) || /éditions de l'emmanuel/i.test(line)) {
+          continue;
+        }
+
+        // Détection du refrain balisé
+        if (/^(R\.|Refrain)/i.test(line)) {
+          inRefrain = true;
+          continue;
+        }
+
+        // Détection d'un nouveau couplet numéroté (ligne contenant uniquement un numéro)
+        if (/^\d+$/.test(line)) {
+          if (currentCouplet.length > 0) {
+            couplets.push(currentCouplet.join('\n').trim());
+            currentCouplet = [];
+          }
+          foundCouplet = true;
+          inRefrain = false;
+          continue;
+        }
+
+        // Détection d'un nouveau couplet numéroté (ligne commençant par un numéro suivi d'un point)
+        if (/^\d+\./.test(line)) {
+          if (currentCouplet.length > 0) {
+            couplets.push(currentCouplet.join('\n').trim());
+            currentCouplet = [];
+          }
+          foundCouplet = true;
+          inRefrain = false;
+          // On enlève le numéro et le point
+          currentCouplet.push(line.replace(/^\d+\.\s*/, ''));
+          continue;
+        }
+
+        // Ajout des lignes au bon endroit
+        if (inRefrain || (!foundCouplet && !inRefrain)) {
+          // On est dans le refrain (balisé ou avant le premier couplet)
+          refrain += (refrain ? '\n' : '') + line;
+        } else {
+          // On est dans un couplet
+          currentCouplet.push(line);
         }
       }
 
-      return { refrain: refrainText.replace(/\n{2,}/g, '\n\n').trim(), couplet: couplets };
+      // Ajout du dernier couplet s'il existe
+      if (currentCouplet.length > 0) {
+        couplets.push(currentCouplet.join('\n').trim());
+      }
+
+      return {
+        refrain: refrain.trim(),
+        couplet: couplets
+      };
     };
 
     const lyrics = parseLyrics(texte);
 
     res.json({
       id,
-      nom: h1,
+      nom,
       refrain: lyrics.refrain,
       couplet: lyrics.couplet,
     });
@@ -123,6 +167,10 @@ app.get('/chant/:id', async (req, res) => {
   }
 });
 
+/*
 app.listen(PORT, () => {
   console.log(`API MesseSong en écoute sur http://localhost:${PORT}`);
 });
+*/
+
+export default app;
