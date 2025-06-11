@@ -83,31 +83,51 @@ app.get('/chant/:id', async (req, res) => {
     const parseLyrics = (text) => {
       if (!text) return { refrain: '', couplet: [] };
 
-      text = text.replace(/\r/g, '');
+      text = text.replace(/\r/g, '').replace(/\t/g, ' ').trim();
+      text = text.split(/©/)[0].trim(); // Remove copyright
 
-      const refrainRegex = /REFRAIN\s*\d*\s*([\s\S]*?)(?=\n\n\d+\n|\n\nREFRAIN\s*\d*|$)/g;
-      const refrainMatches = [...text.matchAll(refrainRegex)];
-      const refrains = refrainMatches.map(match => match[1].trim());
-
-      const coupletRegex = /(?:^|\n\n)(\d+)\n([\s\S]*?)(?=\n\n\d+\n|$)/g;
+      const blocks = text.split(/\n\s*\n/);
+      
       const couplets = [];
-      let match;
-      while ((match = coupletRegex.exec(text)) !== null) {
-        couplets.push(match[2].trim().replace(/\n+/g, '\n'));
-      }
+      let refrains = [];
+      let intro = [];
+      let lyricsStarted = false;
 
-      let refrainText = refrains.join('\n\n');
+      for (const block of blocks) {
+        const trimmedBlock = block.trim();
+        if (!trimmedBlock) continue;
 
-      if (refrainText === '' && couplets.length > 0) {
-        const firstCoupletMatch = text.match(coupletRegex);
-        if (firstCoupletMatch) {
-          const endOfRefrain = text.indexOf(firstCoupletMatch[0]);
-          const potentialRefrain = text.substring(0, endOfRefrain).trim();
-          if (potentialRefrain) refrainText = potentialRefrain;
+        if (/^\d+\.?/.test(trimmedBlock)) {
+          lyricsStarted = true;
+          couplets.push(trimmedBlock.replace(/^\d+\.?\s*/, ''));
+        } else if (/^(R\.|REFRAIN)/i.test(trimmedBlock)) {
+          lyricsStarted = true;
+          refrains.push(trimmedBlock.replace(/^(R\.|REFRAIN)\s*\d*\s*/i, ''));
+        } else if (!lyricsStarted) {
+          intro.push(trimmedBlock);
         }
       }
 
-      return { refrain: refrainText.replace(/\n{2,}/g, '\n\n').trim(), couplet: couplets };
+      let refrainText = [...new Set(refrains)].join('\n\n').trim();
+
+      if (!refrainText && intro.length > 0) {
+        let introText = intro.join('\n\n').trim();
+        introText = introText.split(/No\. \d+-\d+/)[0].trim();
+        introText = introText.replace(/Paroles et musique : .*/i, '').trim();
+        if (introText) {
+          refrainText = introText;
+        }
+      }
+      
+      if (refrainText) {
+          const refrainLines = refrainText.split('\n').map(l => l.trim());
+          const uniqueLines = [...new Set(refrainLines)];
+          if (uniqueLines.length === 1 && refrainLines.length > 1) {
+              refrainText = uniqueLines[0];
+          }
+      }
+
+      return { refrain: refrainText, couplet: couplets };
     };
 
     const lyrics = parseLyrics(texte);
