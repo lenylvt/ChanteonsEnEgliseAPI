@@ -1,8 +1,8 @@
-const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { CookieJar } = require('tough-cookie');
-const { wrapper } = require('axios-cookiejar-support');
+import express from 'express';
+import axios from 'axios';
+import cheerio from 'cheerio';
+import { CookieJar } from 'tough-cookie';
+import { wrapper } from 'axios-cookiejar-support';
 
 const app = express();
 const PORT = 3000;
@@ -129,4 +129,4 @@ app.listen(PORT, () => {
 });
 */
 
-module.exports = app;
+export default app;
