@@ -83,51 +83,43 @@ app.get('/chant/:id', async (req, res) => {
     const parseLyrics = (text) => {
       if (!text) return { refrain: '', couplet: [] };
 
-      text = text.replace(/\r/g, '').replace(/\t/g, ' ').trim();
-      text = text.split(/©/)[0].trim(); // Remove copyright
+      text = text.split(/©/)[0];
+      text = text.replace(/\r/g, '').trim();
 
-      const blocks = text.split(/\n\s*\n/);
-      
+      const lines = text.split('\n').map(l => l.trim().replace(/\t/g, ' ').trim());
+
       const couplets = [];
-      let refrains = [];
-      let intro = [];
-      let lyricsStarted = false;
-
-      for (const block of blocks) {
-        const trimmedBlock = block.trim();
-        if (!trimmedBlock) continue;
-
-        if (/^\d+\.?/.test(trimmedBlock)) {
-          lyricsStarted = true;
-          couplets.push(trimmedBlock.replace(/^\d+\.?\s*/, ''));
-        } else if (/^(R\.|REFRAIN)/i.test(trimmedBlock)) {
-          lyricsStarted = true;
-          refrains.push(trimmedBlock.replace(/^(R\.|REFRAIN)\s*\d*\s*/i, ''));
-        } else if (!lyricsStarted) {
-          intro.push(trimmedBlock);
-        }
-      }
-
-      let refrainText = [...new Set(refrains)].join('\n\n').trim();
-
-      if (!refrainText && intro.length > 0) {
-        let introText = intro.join('\n\n').trim();
-        introText = introText.split(/No\. \d+-\d+/)[0].trim();
-        introText = introText.replace(/Paroles et musique : .*/i, '').trim();
-        if (introText) {
-          refrainText = introText;
-        }
-      }
+      const refrains = [];
+      let currentBlock = [];
       
-      if (refrainText) {
-          const refrainLines = refrainText.split('\n').map(l => l.trim());
-          const uniqueLines = [...new Set(refrainLines)];
-          if (uniqueLines.length === 1 && refrainLines.length > 1) {
-              refrainText = uniqueLines[0];
+      const commitCurrentBlock = () => {
+          if (currentBlock.length > 0) {
+              const blockText = currentBlock.join('\n').trim();
+              if (/paroles et musique/i.test(blockText) || /no\./i.test(blockText) || /éditions de l'emmanuel/i.test(blockText)) {
+                // Ignore metadata blocks
+              } else if (/^\d+\.?/.test(blockText)) {
+                  couplets.push(blockText.replace(/^\d+\.?\s*/, ''));
+              } else if (/^(R\.|REFRAIN)/i.test(blockText)) {
+                  refrains.push(blockText.replace(/^(R\.|REFRAIN)\s*\d*\s*/i, ''));
+              } else if (blockText) {
+                  refrains.push(blockText);
+              }
+          }
+          currentBlock = [];
+      };
+
+      for (const line of lines) {
+          if (line.trim() === '') {
+              commitCurrentBlock();
+          } else {
+              currentBlock.push(line);
           }
       }
+      commitCurrentBlock();
 
-      return { refrain: refrainText, couplet: couplets };
+      const uniqueRefrains = [...new Set(refrains.filter(r => r.length > 0))].join('\n\n').trim();
+
+      return { refrain: uniqueRefrains, couplet: couplets };
     };
 
     const lyrics = parseLyrics(texte);
