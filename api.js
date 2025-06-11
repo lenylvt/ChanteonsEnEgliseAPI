@@ -86,40 +86,30 @@ app.get('/chant/:id', async (req, res) => {
       text = text.split(/©/)[0];
       text = text.replace(/\r/g, '').trim();
 
-      const lines = text.split('\n').map(l => l.trim().replace(/\t/g, ' ').trim());
+      const stanzas = text.split(/\n\s*\n+/).map(s => s.trim().replace(/\t/g, ' ')).filter(s => s);
 
       const couplets = [];
       const refrains = [];
-      let currentBlock = [];
-      
-      const commitCurrentBlock = () => {
-          if (currentBlock.length > 0) {
-              const blockText = currentBlock.join('\n').trim();
-              if (/paroles et musique/i.test(blockText) || /no\./i.test(blockText) || /éditions de l'emmanuel/i.test(blockText)) {
-                // Ignore metadata blocks
-              } else if (/^\d+\.?/.test(blockText)) {
-                  couplets.push(blockText.replace(/^\d+\.?\s*/, ''));
-              } else if (/^(R\.|REFRAIN)/i.test(blockText)) {
-                  refrains.push(blockText.replace(/^(R\.|REFRAIN)\s*\d*\s*/i, ''));
-              } else if (blockText) {
-                  refrains.push(blockText);
-              }
-          }
-          currentBlock = [];
-      };
 
-      for (const line of lines) {
-          if (line.trim() === '') {
-              commitCurrentBlock();
-          } else {
-              currentBlock.push(line);
+      for (const stanza of stanzas) {
+        if (/paroles et musique/i.test(stanza) || /no\./i.test(stanza) || /éditions de l'emmanuel/i.test(stanza)) {
+          continue;
+        }
+
+        if (/^(R\.|\bREFRAIN\b)/i.test(stanza)) {
+          refrains.push(stanza.replace(/^(R\.|\bREFRAIN\b)\s*\d*\s*[\n]*/i, '').trim());
+        } else if (/^\d+\.?/.test(stanza)) {
+          couplets.push(stanza.replace(/^\d+\.?\s*[\n]*/, '').trim());
+        } else {
+          if (stanza) {
+            refrains.push(stanza);
           }
+        }
       }
-      commitCurrentBlock();
 
       const uniqueRefrains = [...new Set(refrains.filter(r => r.length > 0))].join('\n\n').trim();
 
-      return { refrain: uniqueRefrains, couplet: couplets };
+      return { refrain: uniqueRefrains, couplet: couplets.filter(c => c.length > 0) };
     };
 
     const lyrics = parseLyrics(texte);
